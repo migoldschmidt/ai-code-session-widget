@@ -68,7 +68,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Once;
 use std::thread;
 use std::time::Duration;
-use windows::core::w;
+use windows::core::{w, Interface};
 use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
@@ -79,16 +79,20 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Descendants};
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern,
+    IUIAutomationSelectionItemPattern, TreeScope_Descendants, UIA_InvokePatternId,
+    UIA_SelectionItemPatternId,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    EnumWindows, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowThreadProcessId,
-    IsIconic, IsWindowVisible, PostMessageW, PostQuitMessage, RegisterClassExW,
-    SetForegroundWindow, SetLayeredWindowAttributes, SetTimer, SetWindowPos, ShowWindow,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST, LWA_ALPHA, MSG, SW_RESTORE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, WM_CLOSE, WM_DESTROY, WM_TIMER,
-    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    EnumWindows, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextLengthW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostMessageW, PostQuitMessage,
+    RegisterClassExW, SetForegroundWindow, SetLayeredWindowAttributes, SetTimer, SetWindowPos,
+    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST, LWA_ALPHA, MSG,
+    SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, WM_CLOSE,
+    WM_DESTROY, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 struct FindAllContext {
@@ -121,6 +125,80 @@ fn all_windows_for_pid(pid: u32) -> Vec<HWND> {
         let _ = EnumWindows(Some(enum_proc_collect), LPARAM(&mut ctx as *mut _ as isize));
     }
     ctx.found
+}
+
+unsafe extern "system" fn enum_proc_collect_hidden(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let ctx = &mut *(lparam.0 as *mut FindAllContext);
+    if IsWindowVisible(hwnd).as_bool() {
+        return BOOL(1);
+    }
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == ctx.target_pid {
+        ctx.found.push(hwnd);
+    }
+    BOOL(1)
+}
+
+/// The most plausible "main window" among `pid`'s *hidden* top-level windows:
+/// it has a title and is at least 200x200 — the largest such one wins. This
+/// is what an app that was closed to the tray (Claude Desktop) leaves behind.
+fn largest_hidden_titled_window(pid: u32) -> Option<HWND> {
+    let mut ctx = FindAllContext {
+        target_pid: pid,
+        found: Vec::new(),
+    };
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_proc_collect_hidden),
+            LPARAM(&mut ctx as *mut _ as isize),
+        );
+    }
+    let mut best: Option<(i64, HWND)> = None;
+    for hwnd in ctx.found {
+        if unsafe { GetWindowTextLengthW(hwnd) } <= 0 {
+            continue;
+        }
+        let mut rect = RECT::default();
+        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+            continue;
+        }
+        let width = i64::from(rect.right - rect.left);
+        let height = i64::from(rect.bottom - rect.top);
+        if width < 200 || height < 200 {
+            continue;
+        }
+        let area = width * height;
+        if best.map_or(true, |(best_area, _)| area > best_area) {
+            best = Some((area, hwnd));
+        }
+    }
+    best.map(|(_, hwnd)| hwnd)
+}
+
+/// Fallback when no process in the session's ancestry has a visible window:
+/// walk the same chain (stopping at the shell) and show the hidden main
+/// window of the nearest ancestor that has one.
+fn restore_hidden_window_in_chain(
+    start_pid: u32,
+    parent_of: impl Fn(u32) -> Option<u32>,
+    is_shell: impl Fn(u32) -> bool,
+    max_depth: usize,
+) -> Option<HWND> {
+    let mut current = start_pid;
+    for _ in 0..=max_depth {
+        if is_shell(current) {
+            return None;
+        }
+        if let Some(hwnd) = largest_hidden_titled_window(current) {
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOW);
+            }
+            return Some(hwnd);
+        }
+        current = parent_of(current)?;
+    }
+    None
 }
 
 fn window_for_pid(pid: u32) -> Option<HWND> {
@@ -223,9 +301,19 @@ fn find_best_window(pid: u32, hint: &str) -> Option<HWND> {
 /// foreground. If that owner has several windows open (common for apps
 /// like Windows Terminal that host multiple windows from one process),
 /// `hint` (typically the session's project folder name) is used to pick
-/// the right one via UI Automation — see `find_best_window`. No-op if
-/// nothing is found at all.
-pub fn focus_pid(pid: u32, hint: &str) {
+/// the right one via UI Automation — see `find_best_window`.
+///
+/// Fork additions:
+/// - The Windows shell (explorer.exe) is never a focus target and the walk
+///   stops there. Without that, a session whose app is closed to the tray
+///   (Claude Desktop) climbed on to explorer.exe and surfaced a random
+///   Explorer or helper window. Instead the app's hidden main window is
+///   shown again (`restore_hidden_window_in_chain`).
+/// - With `sidebar_title`, the session is also selected in the app's own
+///   list via UI Automation after focusing (`select_in_sidebar`).
+///
+/// Returns a short outcome code for the frontend's console.
+pub fn focus_pid(pid: u32, hint: &str, sidebar_title: Option<&str>) -> String {
     use sysinfo::{Pid, System};
 
     // `new_all()` already performs a full refresh at construction — calling
@@ -238,13 +326,34 @@ pub fn focus_pid(pid: u32, hint: &str) {
             .and_then(|proc| proc.parent())
             .map(|pp| pp.as_u32())
     };
+    let is_shell = |p: u32| {
+        sys.process(Pid::from_u32(p))
+            .is_some_and(|proc| is_shell_process_name(&proc.name().to_string_lossy()))
+    };
+    // Same tree walk, but it never climbs past (or lands on) the shell.
+    let parent_below_shell = |p: u32| if is_shell(p) { None } else { parent_of(p) };
+    let has_window_not_shell = |p: u32| !is_shell(p) && pid_has_window(p);
+    let has_real_window_not_shell = |p: u32| !is_shell(p) && pid_has_real_window(p);
 
-    let Some(target_pid) = resolve_focus_pid(pid, parent_of, pid_has_window, 10) else {
-        return;
+    let Some(target_pid) = resolve_focus_pid(pid, parent_below_shell, has_window_not_shell, 10)
+    else {
+        let Some(hidden) = restore_hidden_window_in_chain(pid, parent_below_shell, is_shell, 10)
+        else {
+            return "no-window".to_string();
+        };
+        unsafe {
+            force_foreground(hidden);
+        }
+        highlight_window(hidden);
+        let mut outcome = "restored-hidden-window".to_string();
+        if let Some(title) = sidebar_title {
+            outcome.push_str(&format!(" sidebar={}", select_in_sidebar(hidden, title).code()));
+        }
+        return outcome;
     };
 
     let Some(hwnd) = find_best_window(target_pid, hint) else {
-        return;
+        return "no-window".to_string();
     };
 
     // `hwnd` itself can be a hidden, zero-size proxy window — notably
@@ -272,14 +381,393 @@ pub fn focus_pid(pid: u32, hint: &str) {
     // WindowsTerminal.exe). There's then nothing left to reverse-engineer:
     // we already know which window to highlight before we've even asked
     // Windows to focus anything.
-    let real_pid =
-        resolve_focus_pid(target_pid, parent_of, pid_has_real_window, 10).unwrap_or(target_pid);
+    let real_pid = resolve_focus_pid(target_pid, parent_below_shell, has_real_window_not_shell, 10)
+        .unwrap_or(target_pid);
     let expected_hwnd = find_best_window(real_pid, hint).unwrap_or(hwnd);
 
     unsafe {
         force_foreground(hwnd);
     }
     highlight_window(expected_hwnd);
+
+    let mut outcome = "focused".to_string();
+    if let Some(title) = sidebar_title {
+        outcome.push_str(&format!(" sidebar={}", select_in_sidebar(expected_hwnd, title).code()));
+    }
+    outcome
+}
+
+fn is_shell_process_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("explorer.exe")
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar selection via UI Automation (fork, opt-in)
+// ---------------------------------------------------------------------------
+
+/// How often the sidebar search is attempted. Electron/Chromium only builds
+/// its accessibility tree once a UI Automation client shows up, so the first
+/// walk can come back (nearly) empty.
+const SIDEBAR_ATTEMPTS: u32 = 6;
+const SIDEBAR_RETRY_MS: u64 = 400;
+
+/// Accessible names of Claude Desktop's mode switch entry for Code. Verified
+/// with scripts/dump-claude-ui.ps1 against Claude Desktop 2.42304 (German UI): two
+/// RadioButtons, "Chat und Cowork" and "Code". While Code is not the active
+/// view, Desktop appends a status badge after a comma ("Code, wartet auf
+/// deine Eingabe"), so only the part before the first comma is compared.
+const CODE_MODE_NAMES: &[&str] = &["Code", "Claude Code"];
+
+/// Result of `select_in_sidebar`: what happened to the session entry, and
+/// whether the app had to be switched to its Code view first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarResult {
+    pub outcome: SidebarOutcome,
+    pub switched_to_code: bool,
+}
+
+impl SidebarResult {
+    pub fn code(self) -> String {
+        if self.switched_to_code {
+            format!("{}+switched-to-code", self.outcome.code())
+        } else {
+            self.outcome.code().to_string()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarOutcome {
+    /// Exactly one clickable element carried the title and it was invoked.
+    Selected,
+    /// No clickable element with that title, even after retrying.
+    NotFound,
+    /// Several clickable elements carry the title — nothing was clicked.
+    Ambiguous,
+    /// The only match refused both Invoke and Select.
+    Failed,
+    /// UI Automation could not be initialized.
+    Unavailable,
+}
+
+impl SidebarOutcome {
+    pub fn code(self) -> &'static str {
+        match self {
+            SidebarOutcome::Selected => "selected",
+            SidebarOutcome::NotFound => "not-found",
+            SidebarOutcome::Ambiguous => "ambiguous",
+            SidebarOutcome::Failed => "failed",
+            SidebarOutcome::Unavailable => "unavailable",
+        }
+    }
+}
+
+/// Collapses whitespace and lowercases, so "  Rework  login form"
+/// and "rework login form" compare equal.
+fn normalize_title(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TitleMatch {
+    No,
+    /// Title plus a space-separated prefix/suffix, e.g. a status word
+    /// ("Inaktiv <title>") or extra info ("<title> Gestartet von …").
+    Partial,
+    Exact,
+}
+
+/// Exact (normalized) match first. A partial match only counts when the
+/// title is set off by a space at the start or end — never "<title>, …",
+/// which is how Desktop labels the header's rename button ("<title>,
+/// Sitzung umbenennen"), and never somewhere in the middle (message text).
+fn title_match(element_name: &str, wanted_normalized: &str) -> TitleMatch {
+    if wanted_normalized.is_empty() {
+        return TitleMatch::No;
+    }
+    let name = normalize_title(element_name);
+    if name == wanted_normalized {
+        TitleMatch::Exact
+    } else if name.starts_with(&format!("{wanted_normalized} ")) || name.ends_with(&format!(" {wanted_normalized}")) {
+        TitleMatch::Partial
+    } else {
+        TitleMatch::No
+    }
+}
+
+fn is_code_mode_name(element_name: &str) -> bool {
+    let before_badge = element_name.split(',').next().unwrap_or("");
+    let name = normalize_title(before_badge);
+    CODE_MODE_NAMES.iter().any(|candidate| normalize_title(candidate) == name)
+}
+
+/// Looks for exactly one clickable element (Invoke or SelectionItem
+/// pattern) under `hwnd` whose name is the session title, and activates it.
+/// If the title is ambiguous nothing is clicked — the window has already
+/// been focused by the caller, which is the safe fallback.
+///
+/// The sidebar only lists Code sessions while Claude Desktop shows its Code
+/// view, so the mode switch (Chat / Cowork / Code) is checked first:
+/// - its Code entry is a selectable tab/radio item that is not selected →
+///   Chat or Cowork is showing → activate Code, then search again;
+/// - its state can't be read (plain button) → switch only if the title is
+///   still missing on the second attempt (the first may just have woken up
+///   Electron's accessibility tree).
+/// The switch is tried at most once per click.
+pub fn select_in_sidebar(hwnd: HWND, title: &str) -> SidebarResult {
+    let mut result = SidebarResult {
+        outcome: SidebarOutcome::NotFound,
+        switched_to_code: false,
+    };
+    let wanted = normalize_title(title);
+    if wanted.is_empty() {
+        return result;
+    }
+
+    let automation: Option<IUIAutomation> = unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()
+    };
+    let Some(automation) = automation else {
+        result.outcome = SidebarOutcome::Unavailable;
+        return result;
+    };
+
+    let title_or_code_mode =
+        |name: &str| title_match(name, &wanted) != TitleMatch::No || is_code_mode_name(name);
+    let mut switch_tried = false;
+    for attempt in 0..SIDEBAR_ATTEMPTS {
+        if attempt > 0 {
+            thread::sleep(Duration::from_millis(SIDEBAR_RETRY_MS));
+        }
+        let found = unsafe { clickable_elements_where(&automation, hwnd, &title_or_code_mode) };
+        let groups = unsafe { classify(found, &wanted) };
+
+        if !switch_tried {
+            if let Some(entry) = unsafe { pick_code_entry(&groups.code_mode) } {
+                let no_title_yet = groups.exact.is_empty() && groups.partial.is_empty();
+                let should_switch = match unsafe { is_selected(&entry) } {
+                    Some(selected) => !selected,
+                    None => no_title_yet && attempt >= 1,
+                };
+                if should_switch {
+                    switch_tried = true;
+                    result.switched_to_code = unsafe { activate_element(&entry) };
+                    continue; // let the view change, then search again
+                }
+            }
+        }
+
+        // Exact names win; partial ones only count if there is no exact one.
+        let candidates = if groups.exact.is_empty() { &groups.partial } else { &groups.exact };
+        match candidates.len() {
+            0 => {}
+            1 => {
+                result.outcome = if unsafe { activate_element(&candidates[0]) } {
+                    SidebarOutcome::Selected
+                } else {
+                    SidebarOutcome::Failed
+                };
+                return result;
+            }
+            _ => {
+                result.outcome = SidebarOutcome::Ambiguous;
+                return result;
+            }
+        }
+    }
+    result
+}
+
+struct ElementGroups {
+    exact: Vec<IUIAutomationElement>,
+    partial: Vec<IUIAutomationElement>,
+    code_mode: Vec<IUIAutomationElement>,
+}
+
+/// Sorts the scan results into exact title matches, partial title matches
+/// and mode-switch entries.
+unsafe fn classify(found: Vec<IUIAutomationElement>, wanted_normalized: &str) -> ElementGroups {
+    let mut groups = ElementGroups {
+        exact: Vec::new(),
+        partial: Vec::new(),
+        code_mode: Vec::new(),
+    };
+    for item in found {
+        let name = item.CurrentName().map(|n| n.to_string()).unwrap_or_default();
+        match title_match(&name, wanted_normalized) {
+            TitleMatch::Exact => groups.exact.push(item),
+            TitleMatch::Partial => groups.partial.push(item),
+            TitleMatch::No => {
+                if is_code_mode_name(&name) {
+                    groups.code_mode.push(item);
+                }
+            }
+        }
+    }
+    groups
+}
+
+/// The Code entry of the mode switch: the only selectable (tab / radio) one
+/// if there is exactly one, else the only clickable one; `None` if unclear.
+unsafe fn pick_code_entry(entries: &[IUIAutomationElement]) -> Option<IUIAutomationElement> {
+    let mut selectable = Vec::new();
+    for item in entries {
+        if item.GetCurrentPattern(UIA_SelectionItemPatternId).is_ok() {
+            selectable.push(item.clone());
+        }
+    }
+    if selectable.len() == 1 {
+        return selectable.pop();
+    }
+    if entries.len() == 1 {
+        return Some(entries[0].clone());
+    }
+    None
+}
+
+/// Selection state of a tab/radio-like element; `None` if it has none.
+unsafe fn is_selected(item: &IUIAutomationElement) -> Option<bool> {
+    let unknown = item.GetCurrentPattern(UIA_SelectionItemPatternId).ok()?;
+    let pattern = unknown.cast::<IUIAutomationSelectionItemPattern>().ok()?;
+    pattern.CurrentIsSelected().ok().map(|selected| selected.as_bool())
+}
+
+unsafe fn supports_pattern_invoke_or_select(item: &IUIAutomationElement) -> bool {
+    item.GetCurrentPattern(UIA_InvokePatternId).is_ok()
+        || item.GetCurrentPattern(UIA_SelectionItemPatternId).is_ok()
+}
+
+/// Every clickable (Invoke or SelectionItem) descendant of `hwnd` whose
+/// accessible name satisfies `name_matches`.
+unsafe fn clickable_elements_where(
+    automation: &IUIAutomation,
+    hwnd: HWND,
+    name_matches: &dyn Fn(&str) -> bool,
+) -> Vec<IUIAutomationElement> {
+    let mut found = Vec::new();
+    let Ok(root) = automation.ElementFromHandle(hwnd) else {
+        return found;
+    };
+    let Ok(condition) = automation.CreateTrueCondition() else {
+        return found;
+    };
+    let Ok(all) = root.FindAll(TreeScope_Descendants, &condition) else {
+        return found;
+    };
+    let Ok(count) = all.Length() else {
+        return found;
+    };
+    for i in 0..count {
+        let Ok(item) = all.GetElement(i) else {
+            continue;
+        };
+        let Ok(name) = item.CurrentName() else {
+            continue;
+        };
+        if name_matches(&name.to_string()) && supports_pattern_invoke_or_select(&item) {
+            found.push(item);
+        }
+    }
+    found
+}
+
+/// Invoke (buttons, links) first, then SelectionItem (list/tree items).
+unsafe fn activate_element(item: &IUIAutomationElement) -> bool {
+    if let Ok(unknown) = item.GetCurrentPattern(UIA_InvokePatternId) {
+        if let Ok(pattern) = unknown.cast::<IUIAutomationInvokePattern>() {
+            if pattern.Invoke().is_ok() {
+                return true;
+            }
+        }
+    }
+    if let Ok(unknown) = item.GetCurrentPattern(UIA_SelectionItemPatternId) {
+        if let Ok(pattern) = unknown.cast::<IUIAutomationSelectionItemPattern>() {
+            if pattern.Select().is_ok() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod fork_tests {
+    use super::*;
+
+    #[test]
+    fn explorer_is_the_shell_case_insensitively() {
+        assert!(is_shell_process_name("explorer.exe"));
+        assert!(is_shell_process_name("Explorer.EXE"));
+        assert!(!is_shell_process_name("Claude.exe"));
+        assert!(!is_shell_process_name("WindowsTerminal.exe"));
+    }
+
+    // Name patterns as seen in a scripts/dump-claude-ui.ps1 run against
+    // Claude Desktop 2.42304 (German UI); the titles themselves are examples.
+    // The German words are Desktop's real labels: "Gestartet von" (started
+    // by), "Inaktiv" (inactive), "Sitzung umbenennen" (rename session),
+    // "Nachrichtenaktionen für … hat geantwortet" (message actions for …).
+    #[test]
+    fn titles_match_exactly_after_normalizing_whitespace_and_case() {
+        let wanted = normalize_title("Rework login form");
+        assert_eq!(title_match("Rework login form", &wanted), TitleMatch::Exact);
+        assert_eq!(title_match("  rework   LOGIN form ", &wanted), TitleMatch::Exact);
+        assert_eq!(title_match("Login", &wanted), TitleMatch::No);
+    }
+
+    #[test]
+    fn partial_title_needs_a_space_not_a_comma() {
+        let wanted = normalize_title("Write changelog for v2.0");
+        assert_eq!(
+            title_match("Write changelog for v2.0 Gestartet von Claude aus Projekt X", &wanted),
+            TitleMatch::Partial
+        );
+        let chat = normalize_title("Summarize notes");
+        assert_eq!(title_match("Inaktiv Summarize notes", &chat), TitleMatch::Partial);
+        // The header's rename button must never count as the sidebar entry.
+        let wanted = normalize_title("Rework login form");
+        assert_eq!(title_match("Rework login form, Sitzung umbenennen", &wanted), TitleMatch::No);
+        assert_eq!(title_match("Nachrichtenaktionen für Rework login form hat geantwortet", &wanted), TitleMatch::No);
+    }
+
+    #[test]
+    fn code_mode_entry_is_recognized_by_name() {
+        assert!(is_code_mode_name("Code"));
+        assert!(is_code_mode_name(" code "));
+        assert!(is_code_mode_name("Code, wartet auf deine Eingabe"));
+        assert!(is_code_mode_name("Claude Code"));
+        assert!(!is_code_mode_name("Chat und Cowork"));
+        assert!(!is_code_mode_name("Cowork"));
+        assert!(!is_code_mode_name("Copy code"));
+        assert!(!is_code_mode_name("In Claude Code öffnen"));
+    }
+
+    #[test]
+    fn sidebar_result_codes() {
+        let plain = SidebarResult { outcome: SidebarOutcome::Selected, switched_to_code: false };
+        let switched = SidebarResult { outcome: SidebarOutcome::NotFound, switched_to_code: true };
+        assert_eq!(plain.code(), "selected");
+        assert_eq!(switched.code(), "not-found+switched-to-code");
+    }
+
+    #[test]
+    fn empty_title_never_matches() {
+        assert_eq!(title_match("", ""), TitleMatch::No);
+        assert_eq!(title_match("anything", &normalize_title("   ")), TitleMatch::No);
+    }
+
+    #[test]
+    fn stopping_at_the_shell_ends_the_walk() {
+        // 100 (session) -> 50 (app, no visible window) -> 10 (shell, has windows)
+        use std::collections::HashMap;
+        let parents: HashMap<u32, u32> = [(100, 50), (50, 10), (10, 1)].into_iter().collect();
+        let is_shell = |p: u32| p == 10;
+        let parent_below_shell = |p: u32| if is_shell(p) { None } else { parents.get(&p).copied() };
+        let has_window_not_shell = |p: u32| !is_shell(p) && (p == 10 || p == 1);
+
+        assert_eq!(resolve_focus_pid(100, parent_below_shell, has_window_not_shell, 10), None);
+    }
 }
 
 /// How long the highlight overlay stays on screen — long enough to spot at

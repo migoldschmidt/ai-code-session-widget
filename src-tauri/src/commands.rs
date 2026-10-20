@@ -1,12 +1,14 @@
 use crate::codex::CodexSessions;
 use crate::model::build_session_list;
-use crate::pid::is_pid_alive;
+use crate::pid::is_session_alive;
 use crate::usage::{
     find_runaway_orphans, sum_session_usage, total_disk_bytes, ProcSample, ResourceUsage,
     SessionsPayload,
 };
 use std::sync::{Mutex, OnceLock};
 use sysinfo::{ProcessesToUpdate, System};
+#[allow(unused_imports)] // package_info() lives on the Manager trait
+use tauri::Manager;
 
 static CODEX: OnceLock<Mutex<CodexSessions>> = OnceLock::new();
 static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
@@ -41,7 +43,9 @@ fn collect_sessions() -> SessionsPayload {
     sys.refresh_memory();
 
     let mut sessions =
-        build_session_list(&sessions_dir, &projects_dir, |pid| is_pid_alive(&sys, pid));
+        build_session_list(&sessions_dir, &projects_dir, |pid, started| {
+            is_session_alive(&sys, pid, started)
+        });
     let codex_home = std::env::var_os("CODEX_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| home.join(".codex"));
@@ -74,6 +78,9 @@ fn collect_sessions() -> SessionsPayload {
             }
         })
         .collect();
+    for session in sessions.iter_mut().filter(|s| s.provider == "claude") {
+        session.background_commands = crate::background::count_background_shells(&procs, session.pid);
+    }
     let root_pids: Vec<u32> = sessions.iter().map(|s| s.pid).collect();
     let totals = sum_session_usage(&procs, &root_pids, sys.cpus().len());
 
@@ -90,13 +97,47 @@ fn collect_sessions() -> SessionsPayload {
     SessionsPayload { sessions, usage }
 }
 
+/// `sidebar_title`: when set (setting "Select in sidebar"), the session is
+/// also selected in the host app's list via UI Automation after focusing.
+/// Returns a short outcome code (e.g. "focused sidebar=selected") that the
+/// frontend logs to the console.
 #[tauri::command]
-pub async fn focus_session(pid: u32, hint: String) {
+pub async fn focus_session(pid: u32, hint: String, sidebar_title: Option<String>) -> String {
     // Walking the process tree and hunting for/highlighting a window is
     // blocking work (Win32 calls, a brief poll-and-sleep) — running it
     // synchronously on the command thread froze the whole UI for the
     // duration of every click.
-    let _ = tauri::async_runtime::spawn_blocking(move || crate::focus::focus_pid(pid, &hint)).await;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::focus::focus_pid(pid, &hint, sidebar_title.as_deref())
+    })
+    .await
+    .unwrap_or_else(|_| "internal-error".to_string())
+}
+
+/// Opens a Claude Desktop Code session via
+/// `claude://claude.ai/epitaxy/<hostSessionId>` (see deeplink.rs). The id is
+/// validated before anything runs.
+#[tauri::command]
+pub fn open_desktop_session(host_session_id: String) -> Result<(), String> {
+    let url = crate::deeplink::desktop_session_url(&host_session_id)
+        .ok_or_else(|| format!("Not a valid Claude Desktop session id: {host_session_id:?}"))?;
+    crate::deeplink::open(&url)
+}
+
+#[tauri::command]
+pub fn get_autostart(app: tauri::AppHandle) -> bool {
+    crate::autostart::is_enabled(&app.package_info().name)
+}
+
+/// Async + spawn_blocking: writing the shortcut goes through COM and the file
+/// system (and antivirus may scan it), and sync commands run on the main
+/// thread, which would freeze the widget meanwhile.
+#[tauri::command]
+pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    let name = app.package_info().name.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::autostart::set_enabled(&name, enabled))
+        .await
+        .unwrap_or_else(|_| Err("Internal error while changing autostart".to_string()))
 }
 
 #[tauri::command]

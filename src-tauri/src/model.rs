@@ -17,12 +17,19 @@ pub struct SessionInfo {
     pub cwd: String,
     pub status: SessionStatus,
     pub activity: Option<String>,
+    /// Raw `statusUpdatedAt` from the session file (Claude only), see sessions.rs.
+    pub status_updated_at: Option<serde_json::Value>,
+    /// `hostSessionId` from the session file (Claude Desktop sessions only).
+    pub host_session_id: Option<String>,
+    /// Shells still running below the session process (fork, background.rs);
+    /// filled in by commands.rs, 0 for Codex.
+    pub background_commands: u32,
 }
 
 pub fn build_session_list(
     sessions_dir: &Path,
     projects_dir: &Path,
-    is_alive: impl Fn(u32) -> bool,
+    is_alive: impl Fn(u32, Option<u64>) -> bool,
 ) -> Vec<SessionInfo> {
     let sessions = read_sessions_dir(sessions_dir);
     let alive = filter_alive(sessions, is_alive);
@@ -44,6 +51,9 @@ pub fn build_session_list(
                 cwd: s.cwd,
                 status,
                 activity,
+                status_updated_at: s.status_updated_at,
+                host_session_id: s.host_session_id,
+                background_commands: 0,
             }
         })
         .collect()
@@ -117,7 +127,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = build_session_list(&sessions_dir, &projects_dir, |pid| pid == 111);
+        let result = build_session_list(&sessions_dir, &projects_dir, |pid, _| pid == 111);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].pid, 111);
@@ -143,7 +153,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = build_session_list(&sessions_dir, &projects_dir, |pid| pid == 222);
+        let result = build_session_list(&sessions_dir, &projects_dir, |pid, _| pid == 222);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].status, SessionStatus::Waiting);
@@ -163,7 +173,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = build_session_list(&sessions_dir, &projects_dir, |_| false);
+        let result = build_session_list(&sessions_dir, &projects_dir, |_, _| false);
 
         assert_eq!(result.len(), 0);
     }
@@ -193,7 +203,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = build_session_list(&sessions_dir, &projects_dir, |pid| pid == 444);
+        let result = build_session_list(&sessions_dir, &projects_dir, |pid, _| pid == 444);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].status, SessionStatus::NeedsInput);

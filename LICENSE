@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2026 Kasper Legarth
+Copyright (c) 2026 Michael Goldschmidt (changes in the fork "AI Code Session Widget")
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +20,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---------------------------------------------------------------------------
+
+Notes:
+
+- The logo and app icons of the fork (assets/logo/, src/public/logo.png,
+  src-tauri/icons/) are part of the fork's changes and covered by this
+  license.
+- The Codex mark in src/mascot-svgs/codex.svg is third-party material under
+  its own MIT license (LobeHub) — see src/mascot-svgs/codex.LICENSE.

@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>AI Session Widget</title>
+    <title>AI Code Session Widget</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -17,7 +17,33 @@
       <div class="resize-handle sw" data-direction="SouthWest"></div>
     </div>
     <div id="app">
-      <div id="drag-region" data-tauri-drag-region></div>
+      <div id="drag-region" data-tauri-drag-region><span id="app-title">AI Code Session Widget</span></div>
+      <!-- Order: filter/sort, then sessions, then system status (orphan warning + usage). -->
+      <div id="filter-bar">
+        <div id="filter-chips" role="group" aria-label="Filter by status">
+          <button type="button" class="filter-chip active" data-status="needsInput" aria-pressed="true">
+            <span class="status-dot status-dot-needsInput"></span><span class="chip-label">Waiting</span><span class="chip-count">0</span>
+          </button>
+          <button type="button" class="filter-chip active" data-status="waitingAlert" aria-pressed="true">
+            <span class="status-dot status-dot-waitingAlert"></span><span class="chip-label">Question</span><span class="chip-count">0</span>
+          </button>
+          <button type="button" class="filter-chip active" data-status="working" aria-pressed="true">
+            <span class="status-dot status-dot-working"></span><span class="chip-label">Working</span><span class="chip-count">0</span>
+          </button>
+          <button type="button" class="filter-chip active" data-status="waiting" aria-pressed="true">
+            <span class="status-dot status-dot-waiting"></span><span class="chip-label">Idle</span><span class="chip-count">0</span>
+          </button>
+        </div>
+        <div id="sort-controls">
+          <button type="button" class="sort-btn" id="sort-key-btn">Status</button>
+          <button type="button" class="sort-btn" id="sort-dir-btn">↓</button>
+        </div>
+      </div>
+      <ul id="session-list"></ul>
+      <div id="orphan-warning" hidden>
+        <button type="button" id="orphan-summary-btn" class="orphan-summary-btn"></button>
+        <ul id="orphan-list" class="orphan-list" hidden></ul>
+      </div>
       <div id="usage-bar">
         <span class="usage-metric">
           <span class="usage-label">CPU</span>
@@ -32,15 +58,18 @@
           <span class="usage-value" id="usage-disk">–</span>
         </span>
       </div>
-      <div id="orphan-warning" hidden>
-        <button type="button" id="orphan-summary-btn" class="orphan-summary-btn"></button>
-        <ul id="orphan-list" class="orphan-list" hidden></ul>
-      </div>
-      <ul id="session-list"></ul>
       <div id="context-menu" class="context-menu" hidden>
         <div class="context-menu-item" id="menu-always-on-top">
           <span class="menu-check">✓</span>
           <span>Always on top</span>
+        </div>
+        <div class="context-menu-item" id="menu-compact">
+          <span class="menu-check">✓</span>
+          <span>Compact view</span>
+        </div>
+        <div class="context-menu-item" id="menu-autostart">
+          <span class="menu-check">✓</span>
+          <span>Start with Windows</span>
         </div>
         <div class="context-menu-separator"></div>
         <div class="context-menu-label">Size</div>
@@ -65,6 +94,16 @@
         <div class="context-menu-item" id="menu-theme-system" data-theme-value="system">
           <span class="menu-check">✓</span>
           <span>System</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-label">On click</div>
+        <div class="context-menu-item" id="menu-open-in-desktop" title="Claude Desktop sessions: open the session directly via claude://claude.ai/epitaxy/&lt;id&gt;">
+          <span class="menu-check">✓</span>
+          <span>Open in Claude Desktop</span>
+        </div>
+        <div class="context-menu-item" id="menu-sidebar-select" title="Fallback when the link is off or fails: select the session in Claude Desktop's sidebar via UI Automation (by title; switches Desktop to Code first)">
+          <span class="menu-check">✓</span>
+          <span>Select in sidebar (fallback)</span>
         </div>
         <div class="context-menu-separator"></div>
         <div class="context-menu-item" id="menu-refresh">Refresh</div>

@@ -370,6 +370,9 @@ impl CodexSessions {
                 cwd: state.cwd.clone(),
                 status: state.status,
                 activity: state.activity.clone(),
+                status_updated_at: None,
+                host_session_id: None,
+                background_commands: 0,
             });
         }
         result.sort_by(|a, b| a.session_id.cmp(&b.session_id));

@@ -1,7 +1,7 @@
 name: Release
 
 # Tag a version to publish installers:
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag v0.3.2 && git push origin v0.3.2
 on:
   push:
     tags: ["v*"]
@@ -14,24 +14,38 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
       - run: npm ci
+      - run: npm test
+      # Build only. The release is created with the GitHub CLI below: its
+      # error messages say what is wrong (tauri-action only reported
+      # "Resource not accessible by integration").
       - uses: tauri-apps/tauri-action@v0
+      - name: Create draft release with the installers
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: AI Session Widget ${{ github.ref_name }}
-          releaseBody: |
-            Windows installers below — take either the `.msi` or the `-setup.exe`.
-
-            See the [README](https://github.com/${{ github.repository }}#readme)
-            for what this is and how it works.
-          releaseDraft: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Text for every version: .github/release-notes.md. Version-specific
+          # notes are added by hand in the draft before publishing.
+          sed "s#{{REPOSITORY}}#${GITHUB_REPOSITORY}#g" .github/release-notes.md > notes.md
+          shopt -s nullglob
+          files=(src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe)
+          if [ ${#files[@]} -eq 0 ]; then echo "No installers found"; exit 1; fi
+          printf 'Installer: %s\n' "${files[@]}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A draft already exists (e.g. created by hand): only replace the installers.
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            # Draft: only visible to you, installers can be tested before "Publish release".
+            gh release create "$TAG" "${files[@]}" --verify-tag --draft \
+              --title "AI Code Session Widget $TAG" --notes-file notes.md
+          fi

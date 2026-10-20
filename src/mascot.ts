@@ -399,6 +399,18 @@ function update(refs: Refs, status: MascotStatus, tick: number): void {
   else updateIdle(refs, tick % IDLE_CYCLE);
 }
 
+/**
+ * Static SVG markup of the mascot as shown for `status` at animation step
+ * `tick` (fork: used to draw the tray icon, see tray.ts). Visibility is set
+ * via attributes, so the markup renders correctly outside the page's CSS.
+ */
+export function mascotSnapshotSvg(status: MascotStatus, tick = 0): string {
+  const svg = createMascotElement();
+  const refs = refsByElement.get(svg);
+  if (refs) update(refs, status, tick);
+  return new XMLSerializer().serializeToString(svg);
+}
+
 // --- Registry: keeps animation phase alive across DOM re-renders ---
 //
 // main.ts rebuilds the session list (and its mascot elements) on every 2s

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -80 720 720" width="1024" height="1024">
+  <defs>
+    <linearGradient id="g" x1="0" y1="34" x2="0" y2="516" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#40A1EF"/><stop offset="1" stop-color="#2DC1EE"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="-80" x2="720" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E1B4B"/><stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <clipPath id="faceclip"><path d="M200 222 C220 204 245 212 270 223 C295 234 315 228 333 214 L333 158 L387 158 L387 214 C405 228 425 234 450 223 C475 212 500 204 520 222 L520 268 C518 345 470 495 360 495 C250 495 202 345 200 268 Z"/></clipPath>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="-80" width="720" height="720">
+      <rect x="0" y="-80" width="720" height="720" fill="#fff"/>
+      <g fill="none" stroke="#000" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M341 318 L360 341 L379 318"/><path d="M322 408 Q360 408 398 408"/>
+      </g>
+    </mask>
+  </defs>
+  
+  <g>
+    <g fill="none" stroke="url(#g)" stroke-width="44" stroke-linecap="round" stroke-linejoin="miter">
+      <path d="M222 34 H205 Q132 34 132 112 V198 L46 275 L132 352 V438 Q132 516 205 516 H222"/>
+      <path d="M498 34 H515 Q588 34 588 112 V198 L674 275 L588 352 V438 Q588 516 515 516 H498"/>
+    </g>
+    <g fill="url(#g)" fill-rule="evenodd">
+      <path d="M207 160 C230 108 295 88 360 88 C425 88 490 108 513 160 Q437 148 387 164 L333 164 Q283 148 207 160 Z M360 104 C363.5 121 367 124.5 384 128 C367 131.5 363.5 135 360 152 C356.5 135 353 131.5 336 128 C353 124.5 356.5 121 360 104 Z"/>
+      <path d="M200 222 C220 204 245 212 270 223 C295 234 315 228 333 214 L333 158 L387 158 L387 214 C405 228 425 234 450 223 C475 212 500 204 520 222 L520 268 C518 345 470 495 360 495 C250 495 202 345 200 268 Z" mask="url(#cut)"/>
+    </g>
+    <g fill="#1E3A8A" fill-opacity="0.35" clip-path="url(#faceclip)" mask="url(#cut)">
+      <path d="M194 226 L194 268 C196 315 208 365 228 406 C254 340 246 272 194 226 Z"/>
+      <path d="M526 226 L526 268 C524 315 512 365 492 406 C466 340 474 272 526 226 Z"/>
+    </g>
+    <g fill="none" stroke="url(#g)" stroke-width="9" stroke-linecap="round">
+      <path d="M244 192 Q274 198 304 192"/>
+      <path d="M416 192 Q446 198 476 192"/>
+    </g>
+  </g>
+</svg>

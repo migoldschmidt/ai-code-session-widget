@@ -1,7 +1,6 @@
 :root {
   --bg-app: #f4f1ec;
   --text-primary: #2c2a28;
-  --drag-handle: rgba(0, 0, 0, 0.15);
   --card-bg: #ffffff;
   --card-border: rgba(0, 0, 0, 0.06);
   --card-border-hover: rgba(0, 0, 0, 0.12);
@@ -24,7 +23,6 @@
 [data-theme="dark"] {
   --bg-app: #2a2825;
   --text-primary: #eae6e0;
-  --drag-handle: rgba(255, 255, 255, 0.2);
   --card-bg: #38352f;
   --card-border: rgba(255, 255, 255, 0.07);
   --card-border-hover: rgba(255, 255, 255, 0.16);
@@ -75,16 +73,22 @@ html, body {
   position: relative;
 }
 
-#drag-region::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 24px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--drag-handle);
-  transform: translate(-50%, -50%);
+/* Product name as title (fork), in place of upstream's grip line. Clicks go
+   through to #drag-region: Tauri only drags from the element that carries
+   data-tauri-drag-region, not from its children. */
+#app-title {
+  display: block;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 #usage-bar {
@@ -93,7 +97,7 @@ html, body {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 10px;
-  margin-bottom: 8px;
+  margin-bottom: 0; /* last block in #app: filters, sessions, then system status */
   border-radius: 8px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -198,13 +202,118 @@ html, body {
   color: var(--card-bg);
 }
 
-#session-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Filter chips (one per status, with a count) and the sort toggles. Below
+   440px window width the chips show only dot + count; the label is in the
+   tooltip. */
+#filter-bar {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#sort-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.filter-chip,
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.sort-btn {
+  border-radius: 6px;
+  color: var(--text-primary);
+}
+
+.filter-chip:hover,
+.sort-btn:hover {
+  border-color: var(--card-border-hover);
+}
+
+.filter-chip.active {
+  color: var(--text-primary);
+}
+
+.filter-chip:not(.active) {
+  opacity: 0.4;
+}
+
+.filter-chip .status-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.chip-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-label {
+  display: none;
+}
+
+@media (min-width: 440px) {
+  .chip-label {
+    display: inline;
+  }
+}
+
+body[data-size-mode="manual"] #filter-bar {
+  margin-right: 8px;
+}
+
+body[data-density="compact"] #filter-bar {
+  margin-bottom: 6px;
+}
+
+/* Cards flow row by row, left to right, into as many columns as fit the
+   window width — at the default 340px that is one column. Card order (and
+   so priority) reads left to right, then top to bottom. */
+#session-list {
+  --card-min-width: 300px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-min-width), 100%), 1fr));
+  align-content: start;
   gap: 8px;
+}
+
+/* Status columns (layoutStatusColumns in main.ts): every card gets an
+   explicit column (and, when a status spans several columns, an explicit
+   row); dense flow stacks each column from the top instead of leaving gaps. */
+#session-list.status-columns {
+  grid-auto-flow: row dense;
+  align-items: start;
+}
+
+.session-card {
+  min-width: 0;
 }
 
 /* Manual sizing gives the widget a fixed viewport. Keep the drag/menu chrome
@@ -280,10 +389,11 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   flex: 1;
 }
 
+/* Session title — the card's main identifier, below the status. */
 .session-name {
   font-weight: 600;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -302,6 +412,21 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+/* Fork: idle, but a command still runs in the background — grey dot with a
+   green ring, so it reads "idle, yet something is working". */
+.session-background .status-dot {
+  box-shadow: 0 0 0 2px var(--status-working);
+}
+
+/* Fork: idle for an hour or more (STALE_IDLE_MS) — probably forgotten. */
+.session-stale {
+  opacity: 0.55;
+}
+
+.session-stale:hover {
+  opacity: 1;
 }
 
 .status-dot-working {
@@ -344,7 +469,10 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   color: var(--status-question);
 }
 
-.session-activity {
+/* Standard view detail line (activity · project folder). Replaces upstream's
+   activity-only line. */
+.session-detail,
+.session-compact-detail {
   font-size: 11px;
   color: var(--text-muted);
   max-width: 100%;
@@ -353,7 +481,126 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   text-overflow: ellipsis;
 }
 
+.session-detail:empty {
+  display: none;
+}
+
+/* Standard view order: session title, detail line, status. (The compact
+   view places every span explicitly in its grid, so `order` doesn't apply
+   there.) */
+.session-name {
+  order: 1;
+}
+
+.session-detail {
+  order: 2;
+}
+
+.session-status-row {
+  order: 3;
+}
+
+/* Compact-only spans (folder next to the status, title · activity below). */
+.session-folder,
+.session-compact-detail {
+  display: none;
+}
+
+/* Compact view (context menu > Compact view, see applyDensity in main.ts):
+   small icon, two short lines — folder + status, then title · activity —
+   and tighter spacing everywhere. */
+body[data-density="compact"] #drag-region {
+  height: 12px;
+  margin-bottom: 2px;
+}
+
+body[data-density="compact"] #app-title {
+  font-size: 10px;
+  line-height: 12px;
+}
+
+body[data-density="compact"] #usage-bar {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+body[data-density="compact"] #orphan-warning {
+  padding: 4px 8px;
+  margin-bottom: 6px;
+}
+
+body[data-density="compact"] #session-list {
+  --card-min-width: 220px;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+body[data-density="compact"] .session-card {
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px var(--card-shadow-1);
+}
+
+/* 32px = 16-cell mascot grid at exactly 2px per cell, so the pixel art stays
+   crisp (crispEdges) instead of snapping unevenly. */
+body[data-density="compact"] .session-card .mascot-svg,
+body[data-density="compact"] .session-card .codex-logo {
+  width: 32px;
+  height: 32px;
+}
+
+/* Line 1: folder (takes the rest, ellipsis), status on the right.
+   Line 2: title · activity. The standard view's title/detail spans hide. */
+body[data-density="compact"] .session-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+body[data-density="compact"] .session-name,
+body[data-density="compact"] .session-detail {
+  display: none;
+}
+
+body[data-density="compact"] .session-folder {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-density="compact"] .session-status-row {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+
+body[data-density="compact"] .session-status {
+  font-size: 12px;
+}
+
+body[data-density="compact"] .session-compact-detail {
+  display: block;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+body[data-density="compact"] .session-compact-detail:empty {
+  display: none;
+}
+
 .empty-state {
+  grid-column: 1 / -1;
   color: var(--text-muted);
   padding: 12px 8px;
   text-align: center;
@@ -369,6 +616,15 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 4px 16px var(--menu-shadow);
   z-index: 1000;
   color: var(--text-primary);
+}
+
+/* In manual size the window can be smaller than the menu; let the menu scroll
+   instead of cutting off its lower entries. (Auto size grows the window
+   instead, see requiredWindowHeight in main.ts.) */
+body[data-size-mode="manual"] .context-menu {
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .context-menu-item {
@@ -415,8 +671,14 @@ body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
   display: none;
 }
 
-body[data-size-mode="manual"] #resize-handles {
+body[data-size-mode="manual"] #resize-handles,
+body[data-size-mode="auto"] #resize-handles {
   display: block;
+}
+
+/* Auto size owns the height, so only the left/right edges resize there. */
+body[data-size-mode="auto"] .resize-handle:not(.e):not(.w) {
+  display: none;
 }
 
 .resize-handle {

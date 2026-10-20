@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Session Widget",
-  "version": "0.2.0",
-  "identifier": "com.kasperlegarth.ai-session-widget",
+  "productName": "AI Code Session Widget",
+  "version": "0.3.2",
+  "identifier": "io.github.migoldschmidt.ai-code-session-widget",
+  "mainBinaryName": "AI Code Session Widget",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,9 +15,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Session Widget",
+        "title": "AI Code Session Widget",
         "width": 340,
         "height": 480,
+        "minWidth": 260,
+        "maximizable": false,
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": true,
@@ -27,12 +30,19 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Michael Goldschmidt",
+    "windows": {
+      "webviewInstallMode": { "type": "skip" },
+      "wix": {
+        "upgradeCode": "ce6562a5-104e-4f94-a74c-812b5a4b64c9"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

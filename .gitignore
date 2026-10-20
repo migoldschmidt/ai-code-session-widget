@@ -15,3 +15,9 @@ Thumbs.db
 # Rust / Tauri
 /src-tauri/target/
 /dist/
+
+# Optional own tray picture (see src/tray.ts) — third-party images stay local
+/src/public/tray-mascot.png
+
+# Logs of the diagnostic scripts (contain local paths and session titles)
+/scripts/logs/
