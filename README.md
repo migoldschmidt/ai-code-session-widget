@@ -68,6 +68,9 @@ with a brief highlight so you can spot it among a dozen open windows.
 - **Auto size shrinks again** — upstream's auto size could only grow (it
   measured `#app`, whose `min-height: 100%` never lets it drop below the
   current window height).
+- **Auto size stops at the screen edge** — with many sessions the window
+  grows only up to the monitor's work area; then the session list scrolls
+  while title, chips and system status stay put.
 - **Native right-click menu** — a Windows popup menu that overlaps the
   desktop and other windows, so it is never cut off and the widget no longer
   has to grow for it. Growing content never reaches below the taskbar.
@@ -148,10 +151,10 @@ shows a short usage summary, the version and a link to this repository.
 | Always on top | on | Keeps the widget above other windows (Win+D minimizes it like any window; use Pin to desktop to keep it visible) |
 | Pin to desktop | off | Desktop-gadget mode: below all other windows, no taskbar button (the tray icon stays), still visible after Win+D; comes up above the windows while you drag it. Turns "Always on top" off; switching it off returns to always on top. |
 | Show in taskbar | on | Taskbar button with the status badge; off leaves only the tray icon. Greyed out while pinned to the desktop (no button there) |
-| View → Transparent background | off | Hides the window panel; title bar, cards, chips, system status and the about panel stay solid |
+| View → Transparent background | off | Hides the window panel; title bar, cards, chips, system status, the empty-state hint and the about panel stay solid, so text stays sharp |
 | View → Compact view | off | Small icon, two short lines per session (folder + status, then title · activity), tighter spacing |
 | Start with Windows | off | Creates/removes `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\AI Code Session Widget.lnk` |
-| View → Auto / Manual size | Auto | Auto fits the height to the content (width stays yours); Manual leaves both to you |
+| View → Auto / Manual size | Auto | Auto fits the height to the content, at most the screen height (then the list scrolls; width stays yours); Manual leaves both to you |
 | View → Light / Dark / System theme | System | Light, Dark or follow Windows |
 | On session click: Open in Claude Desktop | on | Claude Desktop sessions only. Opens `claude://claude.ai/epitaxy/<hostSessionId>`, then focuses and highlights the window as usual. |
 | On session click: Select in sidebar (fallback) | off | Claude Desktop sessions only, and only when the link is off or failed. After focusing Desktop, switches its mode switch to "Code" if Chat/Cowork is showing, then finds exactly one clickable element named like the session title via UI Automation and invokes it. Ambiguous titles are not clicked. Retries because Electron builds its accessibility tree on demand. |

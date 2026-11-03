@@ -338,6 +338,38 @@ body[data-size-mode="manual"] #orphan-warning {
   margin-right: 8px;
 }
 
+/* Auto size, capped to the screen height (resizeWindowToContent): the window
+   stops growing, the chrome stays put and only the session list scrolls,
+   shrinking just as far as needed instead of stretching like in manual. */
+body[data-size-mode="auto"] #app {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body[data-size-mode="auto"] #app > * {
+  flex-shrink: 0;
+}
+
+body[data-size-mode="auto"] #session-list {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+body[data-size-mode="auto"][data-capped="on"] #session-list {
+  padding-right: 8px;
+}
+
+body[data-size-mode="auto"][data-capped="on"] #filter-bar,
+body[data-size-mode="auto"][data-capped="on"] #usage-bar,
+body[data-size-mode="auto"][data-capped="on"] #orphan-warning {
+  margin-right: 8px;
+}
+
 body[data-size-mode="manual"] #session-list {
   flex: 1;
   min-height: 0;
@@ -348,22 +380,22 @@ body[data-size-mode="manual"] #session-list {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-body[data-size-mode="manual"] #session-list::-webkit-scrollbar {
+#session-list::-webkit-scrollbar {
   width: 8px;
 }
 
-body[data-size-mode="manual"] #session-list::-webkit-scrollbar-track {
+#session-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
-body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb {
+#session-list::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
 }
 
-body[data-size-mode="manual"] #session-list::-webkit-scrollbar-thumb:hover {
+#session-list::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
 }
@@ -772,10 +804,38 @@ body.about-open #usage-bar {
 }
 
 /* Transparent background (View menu): the window panel disappears; title,
-   cards, chips, system status and the about panel keep their own
-   background. The empty-state text gets a soft shadow instead. */
+   cards, chips, system status, the empty state and the about panel keep
+   their own solid background. Text must never sit on a see-through pixel:
+   the WebView then drops ClearType and the text turns blurry. So nothing
+   that carries text may be translucent (opacity) either. */
 body[data-transparent="on"] #app {
   background: transparent;
+}
+
+/* Inactive chips: muted by colour instead of opacity, so the chip stays
+   solid and the wallpaper does not shine through behind the text. */
+body[data-transparent="on"] .filter-chip:not(.active) {
+  opacity: 1;
+  color: color-mix(in srgb, var(--text-muted) 45%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--card-border) 45%, transparent);
+}
+
+body[data-transparent="on"] .filter-chip:not(.active) .status-dot {
+  opacity: 0.4;
+}
+
+/* Stale cards: dim the content, not the card, so its background stays
+   opaque. */
+body[data-transparent="on"] .session-stale {
+  opacity: 1;
+}
+
+body[data-transparent="on"] .session-stale > * {
+  opacity: 0.55;
+}
+
+body[data-transparent="on"] .session-stale:hover > * {
+  opacity: 1;
 }
 
 /* The title sits on the wallpaper now: a solid pill keeps it readable. */
@@ -787,7 +847,11 @@ body[data-transparent="on"] #drag-region {
 }
 
 body[data-transparent="on"] .empty-state {
-  text-shadow: 0 0 3px var(--bg-app), 0 0 6px var(--bg-app);
+  justify-self: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
 }
 
 body[data-transparent="on"] #about-panel {

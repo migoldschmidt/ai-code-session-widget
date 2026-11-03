@@ -98,7 +98,9 @@ applyTransparency();
 // meant the window could grow but never shrink again (e.g. after a session
 // ended or when switching to the compact view). Instead: the lowest bottom
 // edge of #app's visible in-flow children (sessions, filter bar, orphan
-// warning, usage bar, about panel) plus #app's bottom padding.
+// warning, usage bar, about panel) plus #app's bottom padding. While the
+// window is capped to the screen height the session list scrolls; the part
+// scrolled out of view counts too, so the window grows back once it fits.
 function contentHeight(): number {
   let bottom = 0;
   for (const child of Array.from(appEl.children)) {
@@ -107,7 +109,17 @@ function contentHeight(): number {
   }
   if (bottom === 0) return appEl.scrollHeight;
   const paddingBottom = parseFloat(getComputedStyle(appEl).paddingBottom) || 0;
-  return Math.ceil(bottom + paddingBottom);
+  const list = document.getElementById("session-list");
+  const listOverflow = list && !list.hidden ? Math.max(0, list.scrollHeight - list.clientHeight) : 0;
+  return Math.ceil(bottom + paddingBottom + listOverflow);
+}
+
+// Auto size never grows the window past the monitor's work area: with many
+// sessions it would otherwise reach off the screen (taskbar side included).
+async function maxWindowHeight(): Promise<number> {
+  const monitor = await currentMonitor();
+  if (!monitor) return Infinity;
+  return Math.floor(monitor.workArea.size.height / monitor.scaleFactor);
 }
 
 // Window width is the user's choice in both size modes: wider windows show
@@ -159,7 +171,10 @@ function saveWindowSize(): void {
 async function resizeWindowToContent(): Promise<void> {
   if (sizeMode === "manual") return;
   try {
-    const wanted = new LogicalSize(preferredWidth, contentHeight());
+    const natural = contentHeight();
+    const maxHeight = await maxWindowHeight();
+    document.body.dataset.capped = natural > maxHeight ? "on" : "off";
+    const wanted = new LogicalSize(preferredWidth, Math.min(natural, maxHeight));
     const current = (await appWindow.innerSize()).toLogical(await appWindow.scaleFactor());
     if (Math.abs(current.width - wanted.width) < 1 && Math.abs(current.height - wanted.height) < 1) return;
     await appWindow.setSize(wanted);
@@ -690,9 +705,10 @@ function render(sessions: SessionInfo[], totalCount: number = sessions.length): 
     row.li.classList.toggle("session-stale", stale);
     row.li.classList.toggle("session-background", background !== null);
 
-    // Long titles/details are cut off with an ellipsis; the tooltip has everything.
+    // Long titles/details are cut off with an ellipsis; the tooltip has
+    // everything, path first.
     row.li.title =
-      `${session.provider === "codex" ? "Codex" : "Claude Code"}: ${session.name}\n${session.cwd}` +
+      `${session.cwd}\n${session.name}` +
       (activity ? `\n${activity}` : "");
     const folder = lastPathSegment(session.cwd);
     const titleText = session.name.trim() !== "" ? session.name : folder;

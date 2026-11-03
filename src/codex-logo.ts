@@ -92,8 +92,8 @@ export function createCodexLogoElement(
   // session list is rebuilt by the two-second poll.
   logo.style.setProperty("--engine-clock", `${-performance.now()}ms`);
 
-  const title = svgElement("title");
-  title.textContent = statusLabel(status);
+  // No SVG <title>: it would replace the card's tooltip (session details)
+  // while hovering the logo; aria-label above names the status.
 
   const defs = svgElement("defs");
   const mark = originalPath.cloneNode(true) as SVGPathElement;
@@ -240,6 +240,6 @@ export function createCodexLogoElement(
   signalText.textContent = status === "needsInput" ? "!" : "?";
   signal.append(signalDisc, signalText);
 
-  logo.append(title, defs, halo, base, segments, portalParticles, core, glyph, signal);
+  logo.append(defs, halo, base, segments, portalParticles, core, glyph, signal);
   return logo;
 }

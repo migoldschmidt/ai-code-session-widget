@@ -74,6 +74,7 @@ If Claude Desktop is closed to the tray, it has no visible window; upstream then
 ## Display
 
 - **Upstream bug fixed:** Auto-size measured `#app.scrollHeight`, which because of `min-height: 100%` never falls below the window height – the window could only grow. Now the bottom edge of the lowest visible block counts.
+- **Auto size capped to the work area:** Without a limit the window grew past the screen with many sessions (desktop mode and always on top alike). The height now stops at the monitor's work area; `#session-list` then scrolls (`data-capped`). The scrolled-out part still counts towards the natural height, so the window grows back to fit once sessions end.
 - **Context menu:** Native Windows popup menu (Tauri `Menu.popup`) since the desktop mode: it overlaps the desktop instead of being clipped to the widget. Earlier the HTML menu made the window grow (Auto) or scroll (Manual) and moved it up near the taskbar. Native menus follow the Windows theme and have no tooltips, so About & help explains the settings.
 - Order in the window: filter bar with logo + "AI Sessions" as title on the left (drag region; no title row of its own since the desktop mode, saves height), sessions, system status (orphaned processes, CPU/RAM/disk).
 - Card, standard: title, detail line (activity · folder), status. Compact: folder + status, below that title · activity.

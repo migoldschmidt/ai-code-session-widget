@@ -26,6 +26,9 @@ export const MASCOT_HEIGHT = GRID.h * GRID.cell;
 // are never touched by this module's JS tick loop.
 function parseSvgTemplate(raw: string): SVGSVGElement {
   const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  // The files carry their own <title> (Danish figure names); as a tooltip it
+  // would hide the card's session details while hovering the mascot.
+  for (const title of Array.from(doc.querySelectorAll("title"))) title.remove();
   return doc.documentElement as unknown as SVGSVGElement;
 }
 

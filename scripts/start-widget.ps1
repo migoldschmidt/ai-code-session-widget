@@ -14,11 +14,15 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$TargetDir = (Split-Path $PSScriptRoot -Parent)
+    [string]$TargetDir
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+
+# Not as a param() default: Windows PowerShell 5.1 leaves $PSScriptRoot
+# empty there, so Split-Path failed before the script even started.
+if (-not $TargetDir) { $TargetDir = Split-Path $PSScriptRoot -Parent }
 
 if (-not (Test-Path (Join-Path $TargetDir 'package.json'))) {
     throw ('No repo in {0}. Specify the repo path with -TargetDir.' -f $TargetDir)
