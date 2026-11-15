@@ -3,9 +3,11 @@
 //! Claude Code runs shell commands (Bash/PowerShell tool) as child processes
 //! of its own process. When the session is idle but such a shell is still
 //! alive, a command keeps running in the background (dev server, watcher,
-//! long build started with `run_in_background`). The widget shows that
-//! instead of a plain "Idle".
+//! long build started with `run_in_background`). Such a session counts as
+//! Working, with the running command(s) as its activity, instead of "Idle".
 
+use crate::model::SessionInfo;
+use crate::status::SessionStatus;
 use crate::usage::ProcSample;
 use std::collections::HashMap;
 
@@ -46,9 +48,63 @@ pub fn count_background_shells(procs: &[ProcSample], session_pid: u32) -> u32 {
     count
 }
 
+/// An idle session with background commands still running is Working; the
+/// activity names the commands. Sessions that need input stay as they are.
+pub fn apply_background_status(session: &mut SessionInfo) {
+    let count = session.background_commands;
+    if count == 0 || session.status != SessionStatus::Waiting {
+        return;
+    }
+    session.status = SessionStatus::Working;
+    session.activity = Some(if count == 1 {
+        "Background command running".to_string()
+    } else {
+        format!("{count} background commands running")
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn session(status: SessionStatus, background_commands: u32) -> SessionInfo {
+        SessionInfo {
+            provider: "claude",
+            pid: 10,
+            session_id: "s".into(),
+            name: "n".into(),
+            cwd: "c".into(),
+            status,
+            activity: Some("Ended with a question".into()),
+            status_updated_at: None,
+            host_session_id: None,
+            background_commands,
+        }
+    }
+
+    #[test]
+    fn idle_with_background_command_becomes_working() {
+        let mut s = session(SessionStatus::Waiting, 1);
+        apply_background_status(&mut s);
+        assert_eq!(s.status, SessionStatus::Working);
+        assert_eq!(s.activity.as_deref(), Some("Background command running"));
+
+        let mut s = session(SessionStatus::Waiting, 3);
+        apply_background_status(&mut s);
+        assert_eq!(s.activity.as_deref(), Some("3 background commands running"));
+    }
+
+    #[test]
+    fn other_states_are_left_alone() {
+        let mut idle = session(SessionStatus::Waiting, 0);
+        apply_background_status(&mut idle);
+        assert_eq!(idle.status, SessionStatus::Waiting);
+
+        let mut needs_input = session(SessionStatus::NeedsInput, 2);
+        apply_background_status(&mut needs_input);
+        assert_eq!(needs_input.status, SessionStatus::NeedsInput);
+        assert_eq!(needs_input.activity.as_deref(), Some("Ended with a question"));
+    }
 
     fn proc(pid: u32, parent: Option<u32>, name: &str) -> ProcSample {
         ProcSample { pid, parent, name: name.into(), cpu_percent: 0.0, memory_bytes: 0, disk_bytes: 0 }

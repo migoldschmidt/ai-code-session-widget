@@ -110,9 +110,9 @@ with a brief highlight so you can spot it among a dozen open windows.
   name as tooltip), no separate title row. Drag the widget by the title,
   any free spot of that bar, or the CPU/RAM/disk bar at the bottom.
 - **Background commands** — an idle session whose shell is still running
-  (dev server, watcher, long build started in the background) shows
-  "Background command running" and a green ring around its grey dot,
-  instead of looking finished. Counted from the process tree: bash, sh,
+  (dev server, watcher, long build started in the background) counts as
+  Working and shows "Background command running", instead of looking
+  finished. Counted from the process tree: bash, sh,
   zsh and PowerShell below the session process (not `cmd.exe`, which
   wraps `npx` MCP servers).
 - **Time in status** — Waiting, Question and Idle show how long the session

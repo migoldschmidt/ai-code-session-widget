@@ -296,13 +296,6 @@ interface SessionInfo {
   backgroundCommands?: number;
 }
 
-/** Idle with a command still running: replaces the activity text (fork). */
-function backgroundText(session: SessionInfo): string | null {
-  const count = session.backgroundCommands ?? 0;
-  if (session.status !== "waiting" || count === 0) return null;
-  return count === 1 ? "Background command running" : `${count} background commands running`;
-}
-
 interface OrphanProcess {
   pid: number;
   name: string;
@@ -695,15 +688,13 @@ function render(sessions: SessionInfo[], totalCount: number = sessions.length): 
       row.visual = visual;
     }
 
-    // Fork: an idle session with a shell still running shows that instead of
-    // its last activity; every status except Working shows how long it has
-    // been in it, and an idle session untouched for an hour is dimmed.
-    const background = visual === "waiting" ? backgroundText(session) : null;
-    const activity = background ?? session.activity;
+    // Fork: every status except Working shows how long it has been in it,
+    // and an idle session untouched for an hour is dimmed. (An idle session
+    // with a background command arrives as Working, see background.rs.)
+    const activity = session.activity;
     const age = Date.now() - (statusSince.get(key)?.since ?? Date.now());
-    const stale = visual === "waiting" && !background && age >= STALE_IDLE_MS;
+    const stale = visual === "waiting" && age >= STALE_IDLE_MS;
     row.li.classList.toggle("session-stale", stale);
-    row.li.classList.toggle("session-background", background !== null);
 
     // Long titles/details are cut off with an ellipsis; the tooltip has
     // everything, path first.

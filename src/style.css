@@ -455,12 +455,6 @@ body[data-size-mode="manual"] #session-list {
   flex-shrink: 0;
 }
 
-/* Fork: idle, but a command still runs in the background — grey dot with a
-   green ring, so it reads "idle, yet something is working". */
-.session-background .status-dot {
-  box-shadow: 0 0 0 2px var(--status-working);
-}
-
 /* Fork: idle for an hour or more (STALE_IDLE_MS) — probably forgotten. */
 .session-stale {
   opacity: 0.55;

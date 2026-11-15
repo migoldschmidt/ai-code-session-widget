@@ -40,7 +40,7 @@ As of 19 Oct 2026: version 0.3.1 installed as MSI and tested on Windows 11 Enter
 | 17 | Installed version: desktop, Start menu, "Installed apps", Task Manager → Details | Logo as icon, name "AI Code Session Widget", process `AI Code Session Widget.exe` |
 | 18 | Installed version is running (also hidden in the tray): double-click the desktop icon again | No second widget, no second process; the running widget comes to the front |
 | 19 | Session without a running command, finished (Idle) | Status "Idle · N min", **no** background command hint |
-| 20 | Have Claude start a dev server or similar in the background, session becomes Idle | "Background command running", green ring around the gray dot; after stopping the server, normal Idle again |
+| 20 | Have Claude start a dev server or similar in the background, session becomes Idle | Status "Working", activity "Background command running"; after stopping the server, normal Idle again |
 | 21 | Leave a session Idle for over 60 min | Card dimmed, normal on hover |
 | 22 | Right-click → Window → Pin to desktop, open other windows over it, click the widget, then another window | Widget stays behind the other windows (after a click on it until another window is activated); no taskbar button, tray icon remains; clicking a session still focuses it |
 | 23 | Pinned to desktop: Win+D, wait a few seconds (polls run), Win+D again — or `scripts\test-win-d.ps1` | Widget stays visible on the desktop and is clickable; the second Win+D brings all windows back and the widget is below them again |
