@@ -80,6 +80,7 @@ fn collect_sessions() -> SessionsPayload {
         .collect();
     for session in sessions.iter_mut().filter(|s| s.provider == "claude") {
         session.background_commands = crate::background::count_background_shells(&procs, session.pid);
+        crate::background::apply_background_status(session);
     }
     let root_pids: Vec<u32> = sessions.iter().map(|s| s.pid).collect();
     let totals = sum_session_usage(&procs, &root_pids, sys.cpus().len());
