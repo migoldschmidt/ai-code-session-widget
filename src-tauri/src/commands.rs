@@ -5,13 +5,27 @@ use crate::usage::{
     find_runaway_orphans, sum_session_usage, total_disk_bytes, ProcSample, ResourceUsage,
     SessionsPayload,
 };
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use sysinfo::{ProcessesToUpdate, System};
 #[allow(unused_imports)] // package_info() lives on the Manager trait
 use tauri::Manager;
 
 static CODEX: OnceLock<Mutex<CodexSessions>> = OnceLock::new();
 static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
+
+// Locks the shared System, creating it on first use. `System::new_all()` can
+// fail (it returns a Result as of sysinfo 0.40); the OnceLock then stays
+// empty and the next call tries again instead of caching the failure. A
+// poisoned lock is recovered: the System holds no invariants a panic
+// elsewhere could have broken.
+fn lock_system() -> Option<MutexGuard<'static, System>> {
+    if SYSTEM.get().is_none() {
+        let sys = System::new_all().ok()?;
+        // Another thread may have won the race; its System is just as good.
+        let _ = SYSTEM.set(Mutex::new(sys));
+    }
+    Some(SYSTEM.get()?.lock().unwrap_or_else(|e| e.into_inner()))
+}
 
 #[tauri::command]
 pub async fn get_sessions() -> SessionsPayload {
@@ -37,7 +51,12 @@ fn collect_sessions() -> SessionsPayload {
     // has a prior sample to diff against — per-process CPU% is a delta since
     // the last refresh, and is meaningless (reads as 0) on a brand-new
     // System with nothing to compare to.
-    let mut sys = SYSTEM.get_or_init(|| Mutex::new(System::new_all())).lock().unwrap_or_else(|e| e.into_inner());
+    let Some(mut sys) = lock_system() else {
+        return SessionsPayload {
+            sessions: Vec::new(),
+            usage: ResourceUsage::default(),
+        };
+    };
     sys.refresh_cpu_all();
     sys.refresh_processes(ProcessesToUpdate::All, true);
     sys.refresh_memory();
@@ -49,7 +68,7 @@ fn collect_sessions() -> SessionsPayload {
     let codex_home = std::env::var_os("CODEX_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| home.join(".codex"));
-    // Recovers from a poisoned lock the same way SYSTEM does above, rather
+    // Recovers from a poisoned lock the same way lock_system does, rather
     // than silently dropping every Codex session forever the first time a
     // panic (anywhere this mutex is held) poisons it.
     let mut codex = CODEX
@@ -160,10 +179,9 @@ pub async fn kill_orphan_process(pid: u32, name: String) -> Result<(), String> {
 // so the two-second-old snapshot the confirm dialog was built from could by
 // now belong to an unrelated process.
 fn kill_process_by_pid_and_name(pid: u32, expected_name: &str) -> Result<(), String> {
-    let mut sys = SYSTEM
-        .get_or_init(|| Mutex::new(System::new_all()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let Some(mut sys) = lock_system() else {
+        return Err("Could not read the process list".into());
+    };
     sys.refresh_processes(ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]), true);
 
     let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) else {
