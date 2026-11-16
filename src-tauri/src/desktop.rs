@@ -156,7 +156,7 @@ fn lower(hwnd: HWND) {
 
 fn set_topmost(hwnd: HWND, on: bool) {
     let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
-    let _ = unsafe { SetWindowPos(hwnd, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
+    let _ = unsafe { SetWindowPos(hwnd, Some(after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
 }
 
 /// Puts the pinned widget below all windows, just above the desktop (its
@@ -176,7 +176,7 @@ fn push_to_bottom(hwnd: HWND) -> bool {
     if in_place {
         return true;
     }
-    let _ = unsafe { SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
+    let _ = unsafe { SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
     true
 }
 

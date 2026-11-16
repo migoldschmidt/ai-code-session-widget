@@ -232,7 +232,7 @@ fn writer_pid(path: &Path, is_codex: &impl Fn(u32) -> bool) -> u32 {
     unsafe {
         let mut handle = 0;
         let mut key = [0u16; 33];
-        if RmStartSession(&mut handle, 0, PWSTR(key.as_mut_ptr())) != ERROR_SUCCESS {
+        if RmStartSession(&mut handle, None, PWSTR(key.as_mut_ptr())) != ERROR_SUCCESS {
             return 0;
         }
         struct Session(u32);
