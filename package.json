@@ -1,7 +1,7 @@
 {
   "name": "session-widget",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "An always-on-top Windows widget showing your running Claude Code and Codex sessions at a glance",
   "license": "MIT",
   "author": "Kasper Legarth",
