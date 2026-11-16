@@ -319,7 +319,9 @@ pub fn focus_pid(pid: u32, hint: &str, sidebar_title: Option<&str>) -> String {
     // `new_all()` already performs a full refresh at construction — calling
     // `refresh_all()` again right after scanned the entire process table
     // twice for no reason.
-    let sys = System::new_all();
+    let Ok(sys) = System::new_all() else {
+        return "no-process-list".to_string();
+    };
 
     let parent_of = |p: u32| {
         sys.process(Pid::from_u32(p))

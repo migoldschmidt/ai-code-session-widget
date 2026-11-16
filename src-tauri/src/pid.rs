@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn current_process_pid_is_reported_alive() {
-        let mut sys = System::new_all();
+        let mut sys = System::new_all().expect("process list");
         sys.refresh_all();
         let current_pid = std::process::id();
 
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn current_process_with_its_real_start_time_is_alive() {
-        let mut sys = System::new_all();
+        let mut sys = System::new_all().expect("process list");
         sys.refresh_all();
         let pid = std::process::id();
         let started = sys.process(Pid::from_u32(pid)).expect("own process").start_time();
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn reused_pid_with_another_start_time_is_not_alive() {
-        let mut sys = System::new_all();
+        let mut sys = System::new_all().expect("process list");
         sys.refresh_all();
         let pid = std::process::id();
         let started = sys.process(Pid::from_u32(pid)).expect("own process").start_time();
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn implausible_pid_is_reported_not_alive() {
-        let mut sys = System::new_all();
+        let mut sys = System::new_all().expect("process list");
         sys.refresh_all();
 
         assert!(!is_pid_alive(&sys, u32::MAX));

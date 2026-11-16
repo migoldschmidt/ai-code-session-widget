@@ -491,7 +491,7 @@ mod tests {
         let home = std::env::var_os("CODEX_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| dirs::home_dir().unwrap().join(".codex"));
-        let sys = sysinfo::System::new_all();
+        let sys = sysinfo::System::new_all().expect("process list");
         let sessions = CodexSessions::default().collect(&home, |pid| {
             sys.process(sysinfo::Pid::from_u32(pid))
                 .is_some_and(|p| p.name().eq_ignore_ascii_case("codex.exe"))
