@@ -68,8 +68,8 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Once;
 use std::thread;
 use std::time::Duration;
-use windows::core::{w, Interface};
-use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::core::{w, Interface, BOOL};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, CreateSolidBrush, DeleteObject, SetWindowRgn, RGN_DIFF,
@@ -920,7 +920,7 @@ fn highlight_window(hwnd: HWND) {
             rect.bottom - rect.top,
             None,
             None,
-            module,
+            Some(module.into()),
             None,
         ) else {
             return;
@@ -933,7 +933,7 @@ fn highlight_window(hwnd: HWND) {
         // window, so this asks its own thread to do it via WM_CLOSE.
         let previous = ACTIVE_OVERLAY_HWND.swap(overlay.0 as isize, Ordering::SeqCst);
         if previous != 0 {
-            let _ = PostMessageW(HWND(previous as *mut _), WM_CLOSE, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(Some(HWND(previous as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
         }
 
         // Punch out the interior so only a `HIGHLIGHT_THICKNESS`-wide frame
@@ -948,13 +948,13 @@ fn highlight_window(hwnd: HWND) {
             width - HIGHLIGHT_THICKNESS,
             height - HIGHLIGHT_THICKNESS,
         );
-        CombineRgn(outer, outer, inner, RGN_DIFF);
+        CombineRgn(Some(outer), Some(outer), Some(inner), RGN_DIFF);
         // SetWindowRgn takes ownership of `outer` (must not be deleted after
         // a successful call) — but `inner` was only a scratch input to
         // CombineRgn and is never handed to Windows, so it has to be deleted
         // here or it leaks a GDI region handle on every single highlight.
-        let _ = DeleteObject(inner);
-        SetWindowRgn(overlay, outer, BOOL(1));
+        let _ = DeleteObject(inner.into());
+        SetWindowRgn(overlay, Some(outer), true);
 
         let _ = SetLayeredWindowAttributes(overlay, COLORREF(0), 255, LWA_ALPHA);
         let _ = ShowWindow(overlay, SW_SHOWNOACTIVATE);
@@ -963,14 +963,14 @@ fn highlight_window(hwnd: HWND) {
         // always-on-top widget included) — explicitly reassert top-of-band.
         let _ = SetWindowPos(
             overlay,
-            HWND_TOPMOST,
+            Some(HWND_TOPMOST),
             rect.left,
             rect.top,
             width,
             height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
-        SetTimer(overlay, 1, HIGHLIGHT_DURATION_MS, None);
+        SetTimer(Some(overlay), 1, HIGHLIGHT_DURATION_MS, None);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
